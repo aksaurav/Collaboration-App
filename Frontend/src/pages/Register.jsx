@@ -24,7 +24,7 @@ const Register = () => {
 
   return (
     // min-h-screen with py-8 ensures the card doesn't touch the top/bottom on small phones
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 px-4 py-8">
+    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-indigo-50 to-blue-100 px-4 py-8">
       {/* w-full for mobile, max-w-md for desktop. Padding scales from p-6 to p-10 */}
       <div className="w-full max-w-md space-y-6 sm:space-y-8 rounded-2xl bg-white p-6 sm:p-10 shadow-xl border border-white/20">
         <div className="text-center">

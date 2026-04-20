@@ -5,21 +5,23 @@ import {
   getUserDocuments,
   updatedDocumentTitle,
   shareDocument,
+  saveVersion,
+  getVersion,
+  deleteDoc,
 } from "../controllers/documentController.js";
-import { protect } from "../middlewares/authMiddleware.js"; // Ensure the folder name is correct (middlewares)
+import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-// Route: /api/docs
-// GET: Fetch all documents belonging to the logged-in user
-// POST: Create a new document
+router.post("/:id/versions", protect, saveVersion);
+
 router.route("/").get(protect, getUserDocuments).post(protect, createDocument);
 router.post("/:id/share", protect, shareDocument);
 
-// Route: /api/docs/:id
-// GET: Fetch a specific document by ID
-router.route("/:id").get(getDocument); // Keeping this public so anyone with the link can view
+router.route("/:id").get(getDocument);
 
 router.patch("/:id/title", updatedDocumentTitle);
 
+router.get("/:id/versions", protect, getVersion);
+router.delete("/:id", protect, deleteDoc);
 export default router;

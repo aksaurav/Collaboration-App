@@ -2,7 +2,14 @@ import { useEffect, useState, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API from "../services/api";
 import { AuthContext } from "../context/AuthContext";
-import { FileText, Plus, Users, LogOut } from "lucide-react";
+import {
+  FileText,
+  Plus,
+  Users,
+  LogOut,
+  Trash2,
+  ShieldAlert,
+} from "lucide-react";
 
 const Home = () => {
   const [documents, setDocuments] = useState([]);
@@ -33,9 +40,33 @@ const Home = () => {
     }
   };
 
+  const deleteDocument = async (e, id) => {
+    // Prevent navigation to the editor when clicking delete
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (
+      !window.confirm(
+        `Are you sure? This will permanently delete the document and all its version history. This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await API.delete(`docs/${id}`);
+      // Optimistic UI update: remove from list immediately
+      setDocuments((prev) => prev.filter((doc) => doc._id !== id));
+    } catch (error) {
+      const errorMsg =
+        error.response?.data?.message || "Failed to delete document";
+      alert(errorMsg);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top Navbar - Responsive padding and flex-wrap for small screens */}
+      {/* Top Navbar */}
       <nav className="flex flex-col sm:flex-row items-center justify-between bg-white px-4 sm:px-8 py-4 shadow-sm border-b border-gray-100 gap-4 sm:gap-0">
         <div className="flex items-center gap-2 text-indigo-600 font-bold text-xl sm:text-2xl">
           <FileText size={24} className="sm:w-[28px]" />
@@ -61,7 +92,7 @@ const Home = () => {
         </div>
       </nav>
 
-      {/* Main Content - Responsive max-width and padding */}
+      {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
           <div>
@@ -96,50 +127,79 @@ const Home = () => {
             </p>
           </div>
         ) : (
-          /* Grid - Mobile: 1, Tablet: 2, Desktop: 3 */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {documents.map((doc) => {
-              const isOwner = doc.owner._id === user?._id;
+              const isOwner = doc.owner?._id === user?._id;
 
               return (
                 <Link
                   key={doc._id}
                   to={`/documents/${doc._id}`}
-                  className="group bg-white p-5 sm:p-6 rounded-xl border border-gray-200 hover:border-indigo-400 hover:shadow-lg transition-all active:bg-gray-50"
+                  className="group relative bg-white p-5 sm:p-6 rounded-xl border border-gray-200 hover:border-indigo-400 hover:shadow-lg transition-all active:bg-gray-50 overflow-hidden flex flex-col justify-between"
                 >
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="p-2.5 sm:p-3 bg-indigo-50 rounded-lg text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                      <FileText size={20} className="sm:w-[24px]" />
+                  <div>
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="p-2.5 sm:p-3 bg-indigo-50 rounded-lg text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                        <FileText size={20} className="sm:w-[24px]" />
+                      </div>
+
+                      <div className="flex flex-col items-end gap-2">
+                        {!isOwner && (
+                          <span className="flex items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-2 py-1 rounded">
+                            <Users size={10} className="sm:w-[12px]" /> Shared
+                          </span>
+                        )}
+
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 rounded-full">
+                          <div className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                          </div>
+                          <span className="text-[9px] font-black text-indigo-600 tracking-tighter uppercase">
+                            Live
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {!isOwner && (
-                      <span className="flex items-center gap-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-2 py-1 rounded">
-                        <Users size={10} className="sm:w-[12px]" /> Shared
-                      </span>
-                    )}
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800 truncate mb-1">
+                      {doc.title || "Untitled Document"}
+                    </h2>
+
+                    <div className="mt-2 flex flex-col gap-1">
+                      <p className="text-[11px] sm:text-xs font-medium">
+                        {isOwner ? (
+                          <span className="text-gray-400 italic">
+                            You own this
+                          </span>
+                        ) : (
+                          <span className="text-indigo-600">
+                            Shared by {doc.owner?.username}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[9px] sm:text-[10px] text-gray-400">
+                        Last updated{" "}
+                        {new Date(doc.updatedAt).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
 
-                  <h2 className="text-base sm:text-lg font-bold text-gray-800 truncate mb-1">
-                    {doc.title || "Untitled Document"}
-                  </h2>
-
-                  <div className="mt-4 flex flex-col gap-1">
-                    <p className="text-[11px] sm:text-xs font-medium">
-                      {isOwner ? (
-                        <span className="text-gray-400 italic">
-                          You own this
+                  {/* DELETE BUTTON SECTION */}
+                  {isOwner && (
+                    <div className="mt-6 pt-4 border-t border-gray-50 flex justify-end">
+                      <button
+                        onClick={(e) => deleteDocument(e, doc._id)}
+                        className="flex items-center gap-1.5 text-gray-400 hover:text-red-600 transition-colors py-1 px-2 rounded-md hover:bg-red-50"
+                        title="Delete Permanently"
+                      >
+                        <Trash2 size={14} />
+                        <span className="text-[10px] font-bold uppercase tracking-tight">
+                          Delete
                         </span>
-                      ) : (
-                        <span className="text-indigo-600">
-                          Shared by {doc.owner?.username}
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-[9px] sm:text-[10px] text-gray-400">
-                      Last updated{" "}
-                      {new Date(doc.updatedAt).toLocaleDateString()}
-                    </p>
-                  </div>
+                      </button>
+                    </div>
+                  )}
                 </Link>
               );
             })}

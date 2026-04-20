@@ -1,4 +1,19 @@
-import { Schema, model } from "mongoose";
+import mongoose, { Schema, model } from "mongoose";
+
+const versionSchema = new mongoose.Schema({
+  content: {
+    type: Object,
+    required: true,
+  },
+  name: {
+    type: String,
+    default: `Autosave`,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now(),
+  },
+});
 
 const documentSchema = new Schema(
   {
@@ -24,6 +39,7 @@ const documentSchema = new Schema(
         ref: "User",
       },
     ],
+    versions: [versionSchema],
   },
   {
     timestamps: true,

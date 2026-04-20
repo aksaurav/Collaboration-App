@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import { io } from "socket.io-client";
+
 import { AuthContext } from "../context/AuthContext";
 import {
   ArrowLeft,
@@ -14,6 +15,9 @@ import {
   Wand2,
   Type,
   Send,
+  History,
+  RotateCcw,
+  Save,
 } from "lucide-react";
 import axios from "axios";
 import API from "../services/api";
@@ -29,10 +33,14 @@ const EditorPage = () => {
   const [title, setTitle] = useState("Loading...");
   const [isSaving, setIsSaving] = useState(false);
 
-  const [collaborators, setCollaborators] = useState([]);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareEmail, setShareEmail] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // --- PRESENCE & HISTORY STATE ---
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState([]);
 
   // 1. Setup Socket
   useEffect(() => {
@@ -41,19 +49,34 @@ const EditorPage = () => {
     return () => s.disconnect();
   }, []);
 
-  // 2. Join & Load
+  // 2. Join & Load Data
   useEffect(() => {
     if (socket == null || quill == null) return;
+
     socket.once("load-document", (doc) => {
       quill.setContents(doc.content);
       setTitle(doc.title || "Untitled Document");
-      setCollaborators(doc.collaborators || []);
       quill.enable();
     });
+
     socket.emit("get-document", documentId);
   }, [socket, quill, documentId]);
 
-  // 3. Sync Changes
+  // 3. Sync Presence
+  useEffect(() => {
+    if (socket == null) return;
+
+    socket.on("update-presence", (users) => {
+      setActiveUsers(users);
+    });
+
+    return () => {
+      socket.off("update-presence");
+      socket.emit("leave-document");
+    };
+  }, [socket]);
+
+  // 4. Sync Content Changes
   useEffect(() => {
     if (socket == null || quill == null) return;
     const sendHandler = (delta, oldDelta, source) => {
@@ -72,20 +95,14 @@ const EditorPage = () => {
     };
   }, [socket, quill]);
 
-  // 4. Sync Title & Collabs
+  // 5. Sync Title
   useEffect(() => {
     if (socket == null) return;
     socket.on("receive-title-update", (newTitle) => setTitle(newTitle));
-    socket.on("collaborator-added", (newCollab) =>
-      setCollaborators((p) => [...p, newCollab]),
-    );
-    return () => {
-      socket.off("receive-title-update");
-      socket.off("collaborator-added");
-    };
+    return () => socket.off("receive-title-update");
   }, [socket]);
 
-  // 5. Debounced Title Save
+  // 6. Debounced Title Save
   useEffect(() => {
     if (socket == null || title === "Loading...") return;
     const delayDebounceFn = setTimeout(() => {
@@ -95,7 +112,7 @@ const EditorPage = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [title, socket]);
 
-  // 6. Auto-Save
+  // 7. Auto-Save Content
   useEffect(() => {
     if (socket == null || quill == null) return;
     const interval = setInterval(() => {
@@ -104,6 +121,44 @@ const EditorPage = () => {
     }, SAVE_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [socket, quill]);
+
+  // --- VERSION HISTORY LOGIC ---
+  const fetchVersions = async () => {
+    try {
+      const { data } = await API.get(`/docs/${documentId}/versions`);
+      setVersions(data);
+    } catch (err) {
+      console.error("Failed to fetch history");
+    }
+  };
+
+  const saveManualVersion = async () => {
+    try {
+      setIsSaving(true);
+      await API.post(`/docs/${documentId}/versions`, {
+        name: `Manual Save - ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+      });
+      fetchVersions();
+    } catch (err) {
+      alert("Failed to save snapshot");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const restoreVersion = (versionContent) => {
+    if (
+      !window.confirm(
+        "Restore this version? Unsaved changes will be overwritten.",
+      )
+    )
+      return;
+    quill.setContents(versionContent);
+    const fullContent = quill.getContents();
+    socket.emit("send-changes", fullContent);
+    socket.emit("save-document", fullContent);
+    setShowHistory(false);
+  };
 
   const handleShare = async (e) => {
     e.preventDefault();
@@ -138,7 +193,7 @@ const EditorPage = () => {
       const aiText = `\n${data.suggestion}\n`;
       quill.insertText(range.index, aiText, {}, "user");
       const fullContent = quill.getContents();
-      socket.emit("send-changes", quill.getContents());
+      socket.emit("send-changes", fullContent);
       socket.emit("save-document", fullContent);
       setIsSaving(true);
     } catch (err) {
@@ -150,7 +205,7 @@ const EditorPage = () => {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-gray-100 overflow-hidden">
+    <div className="flex h-screen flex-col bg-gray-100 overflow-hidden relative">
       {/* Responsive Navigation Header */}
       <nav className="flex items-center justify-between bg-white px-3 sm:px-6 py-2 sm:py-3 shadow-sm border-b z-20">
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
@@ -188,47 +243,54 @@ const EditorPage = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <div className="flex -space-x-1.5 sm:-space-x-2 overflow-hidden">
-            {collaborators.slice(0, 3).map((collab, index) => (
+          <div className="flex -space-x-1.5 sm:-space-x-2 overflow-hidden mr-2">
+            {activeUsers.slice(0, 3).map((activeUser) => (
               <div
-                key={index}
-                style={{ backgroundColor: collab.avatarColor || "#6366f1" }}
-                className="h-6 w-6 sm:h-8 sm:w-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] sm:text-xs font-bold shrink-0"
+                key={activeUser.id}
+                title={activeUser.username}
+                style={{ backgroundColor: activeUser.color || "#6366f1" }}
+                className="relative h-7 w-7 sm:h-9 sm:w-9 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] sm:text-xs font-bold shrink-0 transition-all hover:scale-110"
               >
-                {collab.username?.charAt(0).toUpperCase()}
+                {activeUser.username?.charAt(0).toUpperCase()}
+                <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-green-400 border border-white"></span>
               </div>
             ))}
-            {collaborators.length > 3 && (
-              <div className="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-gray-600 text-[10px] font-bold">
-                +{collaborators.length - 3}
-              </div>
-            )}
           </div>
 
-          <button
-            onClick={() => setShowShareModal(true)}
-            className="flex items-center gap-1 sm:gap-2 rounded-lg bg-indigo-600 sm:bg-white border border-indigo-600 sm:border-gray-200 px-2 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-sm font-semibold text-white sm:text-gray-700 hover:bg-indigo-700 sm:hover:bg-gray-50 shadow-sm transition"
-          >
-            <Users size={14} className="sm:w-[16px]" />{" "}
-            <span className="hidden xs:inline">Share</span>
-          </button>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button
+              onClick={() => {
+                setShowHistory(true);
+                fetchVersions();
+              }}
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition"
+              title="Version History"
+            >
+              <History size={20} />
+            </button>
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="flex items-center gap-1 sm:gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 sm:px-4 sm:py-2 text-[11px] sm:text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm transition"
+            >
+              <Users size={14} />{" "}
+              <span className="hidden xs:inline">Share</span>
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* AI Tool Bar - Scrollable on Mobile */}
+      {/* AI Tool Bar */}
       <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center gap-3 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-1 text-indigo-700 text-[10px] font-bold uppercase tracking-wider shrink-0">
           <Sparkles size={12} />{" "}
           <span className="hidden sm:inline">AI Assistant</span>
         </div>
-        <div className="h-4 w-[1px] bg-indigo-200 shrink-0" />
+        <div className="h-4 w-px bg-indigo-200 shrink-0" />
         <div className="flex gap-2 shrink-0">
           <button
             disabled={isAiLoading}
             onClick={() =>
-              handleAiAction(
-                "Summarize the current content into 3 concise bullet points.",
-              )
+              handleAiAction("Summarize current content into bullet points.")
             }
             className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap"
           >
@@ -253,21 +315,86 @@ const EditorPage = () => {
         </div>
       </div>
 
-      {/* Responsive Editor Space */}
-      <div className="flex-1 overflow-y-auto p-0 sm:p-4 md:p-8 flex justify-center bg-[#F8F9FA]">
-        {/* Paper Container - Responsive widths and padding */}
-        <div className="w-full sm:max-w-[816px] bg-white shadow-none sm:shadow-md min-h-full sm:min-h-[1056px] p-4 sm:p-8 md:p-[96px] relative">
-          <ReactQuill
-            theme="snow"
-            ref={(el) => {
-              if (el) setQuill(el.getEditor());
-            }}
-            className="editor-container"
-          />
+      {/* Main Editor & History Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Editor Space */}
+        <div className="flex-1 overflow-y-auto p-0 sm:p-4 md:p-8 flex justify-center bg-[#F8F9FA]">
+          <div className="w-full sm:max-w-[816px] bg-white shadow-none sm:shadow-md min-h-full sm:min-h-[1056px] p-4 sm:p-8 md:p-[96px] relative">
+            <ReactQuill
+              theme="snow"
+              ref={(el) => {
+                if (el) setQuill(el.getEditor());
+              }}
+              className="editor-container"
+            />
+          </div>
         </div>
+
+        {/* History Sidebar Overlay/Side */}
+        {showHistory && (
+          <div className="w-72 bg-white border-l shadow-xl flex flex-col z-30 animate-in slide-in-from-right duration-300">
+            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <History size={16} /> History
+              </h3>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="hover:bg-gray-200 p-1 rounded"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <button
+                onClick={saveManualVersion}
+                className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition"
+              >
+                <Save size={14} /> Create Snapshot
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {versions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                  <History size={32} className="mb-2 opacity-20" />
+                  <p className="text-[11px] text-center px-4">
+                    No snapshots yet. Click "Create Snapshot" to save the
+                    current progress.
+                  </p>
+                </div>
+              ) : (
+                versions.map((v) => (
+                  <div
+                    key={v._id}
+                    className="p-3 border rounded-lg bg-white hover:border-indigo-300 transition group"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xs font-bold text-gray-700">
+                          {v.name}
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          {new Date(v.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => restoreVersion(v.content)}
+                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded"
+                        title="Restore this version"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Share Modal - Responsive width */}
+      {/* Share Modal */}
       {showShareModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
@@ -281,7 +408,7 @@ const EditorPage = () => {
             </div>
             <form onSubmit={handleShare}>
               <p className="text-xs sm:text-sm text-gray-500 mb-4">
-                Enter the collaborator's email.
+                Enter collaborator's email.
               </p>
               <input
                 type="email"
