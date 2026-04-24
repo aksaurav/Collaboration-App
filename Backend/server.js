@@ -18,9 +18,11 @@ const app = express();
 const httpServer = createServer(app);
 
 // 2. Define Allowed Origins
+
 const allowedOrigins = [
-  "https://collaboration-app-frontend.vercel.app", // Your Vercel frontend
-  "http://localhost:5173", // Local development
+  "https://collaboration-app-d4ze.vercel.app",
+  "https://collaboration-app-plum.vercel.app",
+  "http://localhost:5173",
 ];
 
 // 3. Socket.io Setup
@@ -36,8 +38,12 @@ const io = new Server(httpServer, {
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl)
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allows any URL ending in .vercel.app or localhost
+      if (
+        !origin ||
+        origin.endsWith(".vercel.app") ||
+        origin.includes("localhost")
+      ) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
