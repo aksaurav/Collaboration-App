@@ -7,26 +7,31 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(false);
+
     try {
+      setLoading(true);
+      // Ensure your AuthContext uses the central API service we configured
       await login(email, password);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.message || "Invalid credentials");
+      setError(
+        err.response?.data?.message || "Invalid credentials. Please try again.",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    // Used h-screen for desktop and min-h-screen for mobile to handle keyboard popups better
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-8">
-      {/* w-full ensures it takes full width on small screens 
-          max-w-md keeps it centered and clean on desktop 
-          p-6 on mobile scales up to p-10 on desktop
-      */}
       <div className="w-full max-w-md space-y-6 sm:space-y-8 rounded-2xl bg-white p-6 sm:p-10 shadow-xl border border-white/20">
         <div className="text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
@@ -52,6 +57,7 @@ const Login = () => {
           onSubmit={handleSubmit}
         >
           <div className="space-y-3 sm:space-y-4">
+            {/* Email Field */}
             <div className="relative">
               <Mail
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -66,6 +72,8 @@ const Login = () => {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+
+            {/* Password Field */}
             <div className="relative">
               <Lock
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -84,9 +92,12 @@ const Login = () => {
 
           <button
             type="submit"
-            className="group relative flex w-full justify-center rounded-lg bg-indigo-600 py-3 px-4 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            disabled={loading}
+            className={`group relative flex w-full justify-center rounded-lg bg-indigo-600 py-3 px-4 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shadow-md ${
+              loading ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Sign In
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 

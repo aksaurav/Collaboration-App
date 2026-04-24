@@ -13,6 +13,7 @@ import {
 
 const Dashboard = () => {
   const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -20,10 +21,13 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchDocs = async () => {
       try {
+        // Hits https://your-backend.vercel.app/api/docs
         const { data } = await API.get("/docs");
         setDocuments(data);
       } catch (err) {
-        console.error("Failed to fetch documents");
+        console.error("Failed to fetch documents", err);
+      } finally {
+        setLoading(false);
       }
     };
     fetchDocs();
@@ -32,8 +36,10 @@ const Dashboard = () => {
   // 2. Create a new document and jump straight to it
   const createNewDoc = async () => {
     try {
+      // Hits https://your-backend.vercel.app/api/docs
       const { data } = await API.post("/docs", { title: "Untitled Document" });
-      navigate(`/document/${data._id}`);
+      // Navigates to the editor page
+      navigate(`/documents/${data._id}`);
     } catch (err) {
       alert("Error creating document");
     }
@@ -85,12 +91,16 @@ const Dashboard = () => {
         </div>
 
         {/* Documents Grid */}
-        {documents.length > 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+        ) : documents.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {documents.map((doc) => (
               <div
                 key={doc._id}
-                onClick={() => navigate(`/document/${doc._id}`)}
+                onClick={() => navigate(`/documents/${doc._id}`)}
                 className="group relative cursor-pointer rounded-2xl border border-gray-200 bg-white p-6 transition-all hover:border-indigo-300 hover:shadow-xl hover:shadow-indigo-50/50"
               >
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white">

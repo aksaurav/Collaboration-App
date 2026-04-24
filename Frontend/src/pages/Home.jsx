@@ -2,24 +2,19 @@ import { useEffect, useState, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API from "../services/api";
 import { AuthContext } from "../context/AuthContext";
-import {
-  FileText,
-  Plus,
-  Users,
-  LogOut,
-  Trash2,
-  ShieldAlert,
-} from "lucide-react";
+import { FileText, Plus, Users, LogOut, Trash2 } from "lucide-react";
 
 const Home = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchDocs = async () => {
       try {
+        // Hits https://your-backend.vercel.app/api/docs
         const { data } = await API.get("/docs");
         setDocuments(data);
       } catch (err) {
@@ -32,16 +27,20 @@ const Home = () => {
   }, []);
 
   const createNewDoc = async () => {
+    if (creating) return;
     try {
+      setCreating(true);
+      // Hits https://your-backend.vercel.app/api/docs
       const { data } = await API.post("/docs");
       navigate(`/documents/${data._id}`);
     } catch (err) {
-      alert("Error creating document");
+      alert("Error creating document. Please try again.");
+    } finally {
+      setCreating(false);
     }
   };
 
   const deleteDocument = async (e, id) => {
-    // Prevent navigation to the editor when clicking delete
     e.preventDefault();
     e.stopPropagation();
 
@@ -54,8 +53,8 @@ const Home = () => {
     }
 
     try {
-      await API.delete(`docs/${id}`);
-      // Optimistic UI update: remove from list immediately
+      // Hits https://your-backend.vercel.app/api/docs/:id
+      await API.delete(`/docs/${id}`);
       setDocuments((prev) => prev.filter((doc) => doc._id !== id));
     } catch (error) {
       const errorMsg =
@@ -105,9 +104,10 @@ const Home = () => {
           </div>
           <button
             onClick={createNewDoc}
-            className="flex items-center justify-center gap-2 bg-indigo-600 text-white w-full sm:w-auto px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 shadow-md transition-all active:scale-95"
+            disabled={creating}
+            className={`flex items-center justify-center gap-2 bg-indigo-600 text-white w-full sm:w-auto px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 shadow-md transition-all active:scale-95 ${creating ? "opacity-70 cursor-not-allowed" : ""}`}
           >
-            <Plus size={20} /> New Document
+            <Plus size={20} /> {creating ? "Creating..." : "New Document"}
           </button>
         </div>
 

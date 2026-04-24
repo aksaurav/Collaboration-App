@@ -17,41 +17,53 @@ connectDB();
 const app = express();
 const httpServer = createServer(app);
 
-// 2. Socket.io Setup
+// 2. Define Allowed Origins
+const allowedOrigins = [
+  "https://collaboration-app-frontend.vercel.app", // Your Vercel frontend
+  "http://localhost:5173", // Local development
+];
+
+// 3. Socket.io Setup
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: allowedOrigins, // Use the same array for Socket.io
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
-// 3. Global Middleware
+// 4. Global Middleware
 app.use(
   cors({
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization"], // CRITICAL: Authorization must be here
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   }),
 );
 app.use(express.json());
 
-// 4. Base Health Check (Optional but recommended)
+// 5. Base Health Check
 app.get("/", (req, res) => res.send("Real-Time Doc Engine API is live."));
 
-// 5. REST API Routes
+// 6. REST API Routes
 app.use("/api/docs", documentRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/ai", aiRoutes);
 
-// 6. Initialize Socket Logic
+// 7. Initialize Socket Logic
 socketHandler(io);
 
-// 7. Error Middleware (MUST be after all routes)
+// 8. Error Middleware (MUST be after all routes)
 app.use(errorHandler);
 
-// 8. Start Server
+// 9. Start Server
 const PORT = process.env.PORT || 8000;
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });

@@ -10,22 +10,29 @@ const Register = () => {
     password: "",
   });
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
+
     try {
+      // The baseURL is now handled by the API service
       await API.post("/users/register", formData);
       navigate("/login");
     } catch (err) {
-      setError(err.response?.data?.message || "Registration failed");
+      setError(
+        err.response?.data?.message || "Registration failed. Please try again.",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    // min-h-screen with py-8 ensures the card doesn't touch the top/bottom on small phones
     <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-indigo-50 to-blue-100 px-4 py-8">
-      {/* w-full for mobile, max-w-md for desktop. Padding scales from p-6 to p-10 */}
       <div className="w-full max-w-md space-y-6 sm:space-y-8 rounded-2xl bg-white p-6 sm:p-10 shadow-xl border border-white/20">
         <div className="text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-600">
@@ -62,6 +69,7 @@ const Register = () => {
                 required
                 className="block w-full rounded-lg border border-gray-300 py-2.5 sm:py-3 pl-10 pr-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
                 placeholder="Username"
+                value={formData.username}
                 onChange={(e) =>
                   setFormData({ ...formData, username: e.target.value })
                 }
@@ -79,6 +87,7 @@ const Register = () => {
                 required
                 className="block w-full rounded-lg border border-gray-300 py-2.5 sm:py-3 pl-10 pr-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
                 placeholder="Email address"
+                value={formData.email}
                 onChange={(e) =>
                   setFormData({ ...formData, email: e.target.value })
                 }
@@ -96,6 +105,7 @@ const Register = () => {
                 required
                 className="block w-full rounded-lg border border-gray-300 py-2.5 sm:py-3 pl-10 pr-3 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
                 placeholder="Password"
+                value={formData.password}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
@@ -105,9 +115,12 @@ const Register = () => {
 
           <button
             type="submit"
-            className="w-full rounded-lg bg-blue-600 py-3 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-md"
+            disabled={loading}
+            className={`w-full rounded-lg bg-blue-600 py-3 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-md ${
+              loading ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Create Account
+            {loading ? "Creating Account..." : "Create Account"}
           </button>
         </form>
 

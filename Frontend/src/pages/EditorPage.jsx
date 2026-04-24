@@ -19,7 +19,6 @@ import {
   RotateCcw,
   Save,
 } from "lucide-react";
-import axios from "axios";
 import API from "../services/api";
 
 const SAVE_INTERVAL_MS = 2000;
@@ -42,9 +41,13 @@ const EditorPage = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [versions, setVersions] = useState([]);
 
-  // 1. Setup Socket
+  // 1. Setup Socket - Using VITE_API_URL from environment
   useEffect(() => {
-    const s = io("http://127.0.0.1:8000");
+    // We strip the /api suffix if it exists because Socket.io usually connects to the root
+    const socketUrl = import.meta.env.VITE_API_URL.replace("/api", "");
+    const s = io(socketUrl, {
+      auth: { token: localStorage.getItem("token") }, // Send token for socket auth
+    });
     setSocket(s);
     return () => s.disconnect();
   }, []);
@@ -163,11 +166,11 @@ const EditorPage = () => {
   const handleShare = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await axios.post(
-        `http://127.0.0.1:8000/api/docs/${documentId}/share`,
-        { email: shareEmail },
-        { headers: { Authorization: `Bearer ${user.token}` } },
-      );
+      // Switched to use the central API service for the share endpoint
+      const { data } = await API.post(`/docs/${documentId}/share`, {
+        email: shareEmail,
+      });
+
       socket.emit("user-shared", data.user);
       alert("Document shared successfully!");
       setShareEmail("");
