@@ -12,7 +12,7 @@ export const SocketProvider = ({ children }) => {
     // Only connect if the user is logged in
     if (user) {
       // Use your RENDER URL here (no /api suffix for sockets)
-      const newSocket = io("https://collaboration-app-y7d5.onrender.com", {
+      const newSocket = io("https://collaboration-app-1.onrender.com", {
         withCredentials: true,
         query: { userId: user._id },
         transports: ["websocket", "polling"],

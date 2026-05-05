@@ -21,7 +21,6 @@ const httpServer = createServer(app);
 
 const allowedOrigins = [
   "https://collaboration-app-d4ze.vercel.app",
-  "https://collaboration-app-plum.vercel.app",
   "http://localhost:5173",
 ];
 
