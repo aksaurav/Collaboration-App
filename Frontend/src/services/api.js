@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "https://collaboration-app-y7d5.onrender.com/api",
+  baseURL: "https://collaboration-app-1.onrender.com/api",
 });
 
 // This interceptor is CRITICAL for the "profile" route to work
