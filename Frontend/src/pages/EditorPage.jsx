@@ -46,29 +46,48 @@ const EditorPage = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [versions, setVersions] = useState([]);
 
-  // 1. Setup Socket
+  // 1. Setup Socket (Merged & Fixed)
   useEffect(() => {
-    const socketUrl = import.meta.env.VITE_API_URL.replace("/api", "");
+    // Hardcoded URL as per your requirement
+    const rawUrl = "https://collaboration-app-1.onrender.com/api";
+
+    // Guard against undefined/non-string values
+    if (typeof rawUrl !== "string") {
+      console.error("API URL is not a valid string.");
+      return;
+    }
+
+    // Strip the /api suffix for socket.io connection
+    const socketUrl = rawUrl.replace("/api", "");
+
     const s = io(socketUrl, {
       auth: { token: localStorage.getItem("token") },
     });
 
     socketRef.current = s;
 
-    s.on("connect", () => setIsConnected(true));
-    s.on("disconnect", () => setIsConnected(false));
-    s.on("connect_error", (err) =>
-      console.error("Socket Connection Error:", err.message),
-    );
+    s.on("connect", () => {
+      console.log("✅ Socket connected:", s.id);
+      setIsConnected(true);
+    });
+
+    s.on("disconnect", (reason) => {
+      console.warn("❌ Socket disconnected:", reason);
+      setIsConnected(false);
+    });
+
+    s.on("connect_error", (err) => {
+      console.error("Socket Connection Error:", err.message);
+    });
 
     return () => {
-      s.disconnect();
+      if (s) s.disconnect();
     };
   }, []);
 
   // 2. Load Data & Content Sync
   useEffect(() => {
-    if (!socketRef.current) return;
+    if (!socketRef.current || !isConnected) return;
     const socket = socketRef.current;
 
     const setupEditor = () => {
@@ -126,7 +145,7 @@ const EditorPage = () => {
     if (!socketRef.current) return;
     const interval = setInterval(() => {
       const quill = quillRef.current?.getEditor();
-      if (quill) {
+      if (quill && socketRef.current.connected) {
         socketRef.current.emit("save-document", quill.getContents());
         setIsSaving(false);
       }
@@ -224,7 +243,7 @@ const EditorPage = () => {
 
   return (
     <div className="flex h-screen flex-col bg-gray-100 overflow-hidden relative">
-      {/* Responsive Navigation Header */}
+      {/* Header */}
       <nav className="flex items-center justify-between bg-white px-3 sm:px-6 py-2 sm:py-3 shadow-sm border-b z-20">
         <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
           <button
@@ -252,12 +271,11 @@ const EditorPage = () => {
               ) : isSaving ? (
                 <div className="flex items-center gap-1 text-amber-600">
                   <Cloud size={12} className="animate-pulse" />{" "}
-                  <span className="hidden xs:inline">Saving...</span>
+                  <span>Saving...</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-1 text-green-600">
-                  <CloudCheck size={12} />{" "}
-                  <span className="hidden xs:inline">Saved</span>
+                  <CloudCheck size={12} /> <span>Saved</span>
                 </div>
               )}
             </div>
@@ -278,7 +296,6 @@ const EditorPage = () => {
               </div>
             ))}
           </div>
-
           <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => {
@@ -286,13 +303,12 @@ const EditorPage = () => {
                 fetchVersions();
               }}
               className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition"
-              title="Version History"
             >
               <History size={20} />
             </button>
             <button
               onClick={() => setShowShareModal(true)}
-              className="flex items-center gap-1 sm:gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 sm:px-4 sm:py-2 text-[11px] sm:text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm transition"
+              className="flex items-center gap-1 sm:gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-white text-[11px] sm:text-sm font-semibold hover:bg-indigo-700 shadow-sm transition"
             >
               <Users size={14} />{" "}
               <span className="hidden xs:inline">Share</span>
@@ -301,7 +317,7 @@ const EditorPage = () => {
         </div>
       </nav>
 
-      {/* AI Tool Bar */}
+      {/* AI Bar */}
       <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center gap-3 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-1 text-indigo-700 text-[10px] font-bold uppercase tracking-wider shrink-0">
           <Sparkles size={12} />{" "}
@@ -314,33 +330,33 @@ const EditorPage = () => {
             onClick={() =>
               handleAiAction("Summarize current content into bullet points.")
             }
-            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap disabled:opacity-50"
+            className="px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 disabled:opacity-50"
           >
-            <Type size={12} /> Summarize
+            Summarize
           </button>
           <button
             disabled={isAiLoading || !isConnected}
             onClick={() => handleAiAction("Check grammar and spelling.")}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap disabled:opacity-50"
+            className="px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 disabled:opacity-50"
           >
-            <Wand2 size={12} /> Fix Grammar
+            Fix Grammar
           </button>
           <button
             disabled={isAiLoading || !isConnected}
             onClick={() =>
               handleAiAction("Continue writing the next paragraph.")
             }
-            className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 rounded-md text-[11px] font-medium text-white shadow-sm whitespace-nowrap disabled:opacity-50"
+            className="px-2.5 py-1 bg-indigo-600 rounded-md text-[11px] font-medium text-white disabled:opacity-50"
           >
-            {isAiLoading ? "Typing..." : "Continue"} <Send size={10} />
+            {isAiLoading ? "Typing..." : "Continue"}
           </button>
         </div>
       </div>
 
-      {/* Main Editor & History Layout */}
+      {/* Editor Content */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-y-auto p-0 sm:p-4 md:p-8 flex justify-center bg-[#F8F9FA]">
-          <div className="w-full sm:max-w-[816px] bg-white shadow-none sm:shadow-md min-h-full sm:min-h-[1056px] p-4 sm:p-8 md:p-[96px] relative">
+          <div className="w-full sm:max-w-[816px] bg-white shadow-none sm:shadow-md min-h-full p-4 sm:p-8 md:p-[96px] relative">
             <ReactQuill
               theme="snow"
               ref={quillRef}
@@ -352,10 +368,10 @@ const EditorPage = () => {
 
         {/* History Sidebar */}
         {showHistory && (
-          <div className="w-72 bg-white border-l shadow-xl flex flex-col z-30 animate-in slide-in-from-right duration-300">
+          <div className="w-72 bg-white border-l shadow-xl flex flex-col z-30">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <History size={16} /> History
+                History
               </h3>
               <button
                 onClick={() => setShowHistory(false)}
@@ -367,28 +383,25 @@ const EditorPage = () => {
             <div className="p-4">
               <button
                 onClick={saveManualVersion}
-                className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition"
+                className="w-full py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition"
               >
-                <Save size={14} /> Create Snapshot
+                Create Snapshot
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {versions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                  <History size={32} className="mb-2 opacity-20" />
-                  <p className="text-[11px] text-center px-4">
-                    No snapshots yet.
-                  </p>
-                </div>
+                <p className="text-[11px] text-center text-gray-400 py-12">
+                  No snapshots yet.
+                </p>
               ) : (
                 versions.map((v) => (
                   <div
                     key={v._id}
-                    className="p-3 border rounded-lg bg-white hover:border-indigo-300 transition group"
+                    className="p-3 border rounded-lg bg-white hover:border-indigo-300 transition"
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-xs font-bold text-gray-700">
+                    <div className="flex justify-between items-center">
+                      <div className="overflow-hidden">
+                        <p className="text-xs font-bold text-gray-700 truncate">
                           {v.name}
                         </p>
                         <p className="text-[10px] text-gray-400">
@@ -415,10 +428,8 @@ const EditorPage = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg sm:text-xl font-bold text-gray-800">
-                Share document
-              </h3>
-              <button onClick={() => setShowShareModal(false)} className="p-1">
+              <h3 className="text-lg font-bold">Share document</h3>
+              <button onClick={() => setShowShareModal(false)}>
                 <X size={20} />
               </button>
             </div>
@@ -453,22 +464,7 @@ const EditorPage = () => {
 
       <style>{`
         .ql-container.ql-snow { border: none !important; font-size: 16px; }
-        .ql-toolbar.ql-snow { 
-          border: none !important; 
-          border-bottom: 1px solid #f3f4f6 !important; 
-          position: sticky; 
-          top: 0; 
-          z-index: 10; 
-          background: white; 
-          display: flex; 
-          flex-wrap: wrap;
-          justify-content: center; 
-          padding: 4px !important; 
-        }
-        @media (max-width: 640px) {
-          .ql-toolbar.ql-snow { justify-content: flex-start; }
-          .ql-editor { padding: 0 !important; font-size: 14px; }
-        }
+        .ql-toolbar.ql-snow { border: none !important; border-bottom: 1px solid #f3f4f6 !important; position: sticky; top: 0; z-index: 10; background: white; padding: 4px !important; }
         .editor-container .ql-editor { min-height: 70vh; padding: 0 !important; line-height: 1.6; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
