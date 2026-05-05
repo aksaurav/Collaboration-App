@@ -21,6 +21,7 @@ const httpServer = createServer(app);
 const allowedOrigins = [
   "https://collaboration-app-d4ze.vercel.app",
   "https://collaboration-app-1.onrender.com",
+  "https://collaboration-app-delta.vercel.app",
   "http://localhost:5173",
 ];
 
