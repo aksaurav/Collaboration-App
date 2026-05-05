@@ -33,21 +33,9 @@ const io = new Server(httpServer, {
   },
 });
 
-// 4. Global Middleware
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allows any URL ending in .vercel.app or localhost
-      if (
-        !origin ||
-        origin.endsWith(".vercel.app") ||
-        origin.includes("localhost")
-      ) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowedOrigins,
     credentials: true,
   }),
 );
