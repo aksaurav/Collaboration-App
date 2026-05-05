@@ -1,25 +1,21 @@
 // backend/controllers/aiController.js
-import OpenAI from "openai";
+import Groq from "groq-sdk";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    "HTTP-Referer": "http://localhost:5173", // OpenRouter requires a valid URL here
-    "X-Title": "Collaboratron",
-  },
+// Initialize Groq with your API key from environment variables
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
 });
 
 export const generateAIText = async (req, res) => {
   const { prompt, context } = req.body;
 
   try {
-    const response = await openai.chat.completions.create({
-      // FIXED MODEL ID: Using the specific OpenRouter string for Gemini Flash
-      model: "meta-llama/llama-3.3-70b-instruct",
+    const response = await groq.chat.completions.create({
+      // Llama 3.3 70B is incredibly fast on Groq
+      model: "llama-3.3-70b-versatile",
       messages: [
         {
           role: "system",
@@ -31,13 +27,22 @@ export const generateAIText = async (req, res) => {
           content: `Document Context: "${context || "The document is currently empty."}"\n\nTask: ${prompt}`,
         },
       ],
+      // Optional: Adjust temperature for more creative or factual responses
+      temperature: 0.7,
+      max_tokens: 1024,
     });
 
-    const suggestion = response.choices[0].message.content;
+    const suggestion = response.choices[0]?.message?.content;
+
+    if (!suggestion) {
+      throw new Error("No suggestion returned from Groq");
+    }
+
     res.status(200).json({ suggestion });
   } catch (error) {
-    // This will now catch and log the specific reason if it fails again
-    console.error("AI ERROR:", error.response?.data || error.message);
+    // Log the specific Groq error details for debugging
+    console.error("GROQ AI ERROR:", error.response?.data || error.message);
+
     res.status(500).json({
       message: "AI Generation failed",
       details: error.message,
