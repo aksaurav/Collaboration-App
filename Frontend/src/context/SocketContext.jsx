@@ -15,7 +15,7 @@ export const SocketProvider = ({ children }) => {
       const newSocket = io("https://collaboration-app-y7d5.onrender.com", {
         withCredentials: true,
         query: { userId: user._id },
-        transports: ["websocket", "polling"], // Add this line
+        transports: ["websocket", "polling"],
       });
 
       setSocket(newSocket);
