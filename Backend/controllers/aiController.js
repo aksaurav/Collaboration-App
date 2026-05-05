@@ -2,19 +2,20 @@
 import Groq from "groq-sdk";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config(); //
 
-// Initialize Groq with your API key from environment variables
+// Initialize Groq with your API key
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
 export const generateAIText = async (req, res) => {
-  const { prompt, context } = req.body;
+  // Defensive check: ensure context is at least an empty string to avoid .replace errors
+  const { prompt, context = "" } = req.body;
 
   try {
     const response = await groq.chat.completions.create({
-      // Llama 3.3 70B is incredibly fast on Groq
+      // Llama 3.3 70B is the modern high-performance model for Groq
       model: "llama-3.3-70b-versatile",
       messages: [
         {
@@ -24,10 +25,9 @@ export const generateAIText = async (req, res) => {
         },
         {
           role: "user",
-          content: `Document Context: "${context || "The document is currently empty."}"\n\nTask: ${prompt}`,
+          content: `Document Context: "${context}"\n\nTask: ${prompt}`,
         },
       ],
-      // Optional: Adjust temperature for more creative or factual responses
       temperature: 0.7,
       max_tokens: 1024,
     });
@@ -35,13 +35,13 @@ export const generateAIText = async (req, res) => {
     const suggestion = response.choices[0]?.message?.content;
 
     if (!suggestion) {
-      throw new Error("No suggestion returned from Groq");
+      throw new Error("Groq returned an empty response.");
     }
 
     res.status(200).json({ suggestion });
   } catch (error) {
-    // Log the specific Groq error details for debugging
-    console.error("GROQ AI ERROR:", error.response?.data || error.message);
+    // Detailed logging for your Render dashboard
+    console.error("GROQ AI ERROR:", error.message);
 
     res.status(500).json({
       message: "AI Generation failed",

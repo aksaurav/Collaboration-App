@@ -1,4 +1,4 @@
-import { useEffect, useState, useContext } from "react";
+import { useEffect, useState, useContext, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
@@ -18,6 +18,7 @@ import {
   History,
   RotateCcw,
   Save,
+  AlertCircle,
 } from "lucide-react";
 import API from "../services/api";
 
@@ -27,103 +28,111 @@ const EditorPage = () => {
   const { id: documentId } = useParams();
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  const [socket, setSocket] = useState();
-  const [quill, setQuill] = useState();
+
+  // Refs for stable instances
+  const socketRef = useRef();
+  const quillRef = useRef();
+
+  // State
   const [title, setTitle] = useState("Loading...");
   const [isSaving, setIsSaving] = useState(false);
-
+  const [isConnected, setIsConnected] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareEmail, setShareEmail] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // --- PRESENCE & HISTORY STATE ---
+  // Presence & History
   const [activeUsers, setActiveUsers] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [versions, setVersions] = useState([]);
 
-  // 1. Setup Socket - Using VITE_API_URL from environment
+  // 1. Setup Socket
   useEffect(() => {
-    // We strip the /api suffix if it exists because Socket.io usually connects to the root
     const socketUrl = import.meta.env.VITE_API_URL.replace("/api", "");
     const s = io(socketUrl, {
-      auth: { token: localStorage.getItem("token") }, // Send token for socket auth
+      auth: { token: localStorage.getItem("token") },
     });
-    setSocket(s);
-    return () => s.disconnect();
+
+    socketRef.current = s;
+
+    s.on("connect", () => setIsConnected(true));
+    s.on("disconnect", () => setIsConnected(false));
+    s.on("connect_error", (err) =>
+      console.error("Socket Connection Error:", err.message),
+    );
+
+    return () => {
+      s.disconnect();
+    };
   }, []);
 
-  // 2. Join & Load Data
+  // 2. Load Data & Content Sync
   useEffect(() => {
-    if (socket == null || quill == null) return;
+    if (!socketRef.current) return;
+    const socket = socketRef.current;
 
-    socket.once("load-document", (doc) => {
-      quill.setContents(doc.content);
-      setTitle(doc.title || "Untitled Document");
-      quill.enable();
-    });
+    const setupEditor = () => {
+      const quill = quillRef.current?.getEditor();
+      if (!quill) return;
 
-    socket.emit("get-document", documentId);
-  }, [socket, quill, documentId]);
+      quill.disable();
+      quill.setText("Loading document...");
 
-  // 3. Sync Presence
-  useEffect(() => {
-    if (socket == null) return;
+      socket.once("load-document", (doc) => {
+        quill.setContents(doc.content);
+        setTitle(doc.title || "Untitled Document");
+        quill.enable();
+      });
 
-    socket.on("update-presence", (users) => {
-      setActiveUsers(users);
-    });
-
-    return () => {
-      socket.off("update-presence");
-      socket.emit("leave-document");
+      socket.emit("get-document", documentId);
     };
-  }, [socket]);
 
-  // 4. Sync Content Changes
-  useEffect(() => {
-    if (socket == null || quill == null) return;
-    const sendHandler = (delta, oldDelta, source) => {
-      if (source !== "user") return;
-      socket.emit("send-changes", delta);
-      setIsSaving(true);
-    };
+    setupEditor();
+
     const receiveHandler = (delta) => {
-      quill.updateContents(delta);
+      quillRef.current?.getEditor().updateContents(delta);
     };
-    quill.on("text-change", sendHandler);
+
     socket.on("receive-changes", receiveHandler);
-    return () => {
-      quill.off("text-change", sendHandler);
-      socket.off("receive-changes", receiveHandler);
-    };
-  }, [socket, quill]);
-
-  // 5. Sync Title
-  useEffect(() => {
-    if (socket == null) return;
     socket.on("receive-title-update", (newTitle) => setTitle(newTitle));
-    return () => socket.off("receive-title-update");
-  }, [socket]);
+    socket.on("update-presence", (users) => setActiveUsers(users));
 
-  // 6. Debounced Title Save
+    return () => {
+      socket.off("receive-changes", receiveHandler);
+      socket.off("receive-title-update");
+      socket.off("update-presence");
+    };
+  }, [documentId, isConnected]);
+
+  // 3. User Change Handler (Local -> Server)
+  const handleTextChange = useCallback((delta, oldDelta, source) => {
+    if (source !== "user" || !socketRef.current) return;
+    socketRef.current.emit("send-changes", delta);
+    setIsSaving(true);
+  }, []);
+
+  // 4. Debounced Title Save
   useEffect(() => {
-    if (socket == null || title === "Loading...") return;
+    if (!socketRef.current || title === "Loading...") return;
     const delayDebounceFn = setTimeout(() => {
-      socket.emit("update-title", title);
+      socketRef.current.emit("update-title", title);
       setIsSaving(false);
     }, 1000);
     return () => clearTimeout(delayDebounceFn);
-  }, [title, socket]);
+  }, [title]);
 
-  // 7. Auto-Save Content
+  // 5. Auto-Save Interval
   useEffect(() => {
-    if (socket == null || quill == null) return;
+    if (!socketRef.current) return;
     const interval = setInterval(() => {
-      socket.emit("save-document", quill.getContents());
-      setIsSaving(false);
+      const quill = quillRef.current?.getEditor();
+      if (quill) {
+        socketRef.current.emit("save-document", quill.getContents());
+        setIsSaving(false);
+      }
     }, SAVE_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [socket, quill]);
+  }, []);
 
   // --- VERSION HISTORY LOGIC ---
   const fetchVersions = async () => {
@@ -156,22 +165,24 @@ const EditorPage = () => {
       )
     )
       return;
+
+    const quill = quillRef.current?.getEditor();
+    if (!quill) return;
+
     quill.setContents(versionContent);
     const fullContent = quill.getContents();
-    socket.emit("send-changes", fullContent);
-    socket.emit("save-document", fullContent);
+    socketRef.current.emit("send-changes", fullContent);
+    socketRef.current.emit("save-document", fullContent);
     setShowHistory(false);
   };
 
   const handleShare = async (e) => {
     e.preventDefault();
     try {
-      // Switched to use the central API service for the share endpoint
       const { data } = await API.post(`/docs/${documentId}/share`, {
         email: shareEmail,
       });
-
-      socket.emit("user-shared", data.user);
+      socketRef.current.emit("user-shared", data.user);
       alert("Document shared successfully!");
       setShareEmail("");
       setShowShareModal(false);
@@ -181,7 +192,9 @@ const EditorPage = () => {
   };
 
   const handleAiAction = async (command) => {
+    const quill = quillRef.current?.getEditor();
     if (!quill) return;
+
     setIsAiLoading(true);
     const currentText = quill.getText();
     try {
@@ -189,15 +202,17 @@ const EditorPage = () => {
         prompt: command,
         context: currentText,
       });
+
       const range = quill.getSelection() || {
         index: quill.getLength(),
         length: 0,
       };
       const aiText = `\n${data.suggestion}\n`;
-      quill.insertText(range.index, aiText, {}, "user");
+
+      quill.insertText(range.index, aiText, "user");
       const fullContent = quill.getContents();
-      socket.emit("send-changes", fullContent);
-      socket.emit("save-document", fullContent);
+      socketRef.current.emit("send-changes", fullContent);
+      socketRef.current.emit("save-document", fullContent);
       setIsSaving(true);
     } catch (err) {
       alert("AI service is busy.");
@@ -230,7 +245,11 @@ const EditorPage = () => {
               placeholder="Untitled Document"
             />
             <div className="text-[10px] sm:text-xs font-medium">
-              {isSaving ? (
+              {!isConnected ? (
+                <div className="flex items-center gap-1 text-red-500">
+                  <AlertCircle size={12} /> <span>Offline</span>
+                </div>
+              ) : isSaving ? (
                 <div className="flex items-center gap-1 text-amber-600">
                   <Cloud size={12} className="animate-pulse" />{" "}
                   <span className="hidden xs:inline">Saving...</span>
@@ -291,27 +310,27 @@ const EditorPage = () => {
         <div className="h-4 w-px bg-indigo-200 shrink-0" />
         <div className="flex gap-2 shrink-0">
           <button
-            disabled={isAiLoading}
+            disabled={isAiLoading || !isConnected}
             onClick={() =>
               handleAiAction("Summarize current content into bullet points.")
             }
-            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap"
+            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap disabled:opacity-50"
           >
             <Type size={12} /> Summarize
           </button>
           <button
-            disabled={isAiLoading}
+            disabled={isAiLoading || !isConnected}
             onClick={() => handleAiAction("Check grammar and spelling.")}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap"
+            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-md text-[11px] font-medium text-indigo-600 border border-indigo-200 whitespace-nowrap disabled:opacity-50"
           >
             <Wand2 size={12} /> Fix Grammar
           </button>
           <button
-            disabled={isAiLoading}
+            disabled={isAiLoading || !isConnected}
             onClick={() =>
               handleAiAction("Continue writing the next paragraph.")
             }
-            className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 rounded-md text-[11px] font-medium text-white shadow-sm whitespace-nowrap"
+            className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 rounded-md text-[11px] font-medium text-white shadow-sm whitespace-nowrap disabled:opacity-50"
           >
             {isAiLoading ? "Typing..." : "Continue"} <Send size={10} />
           </button>
@@ -320,20 +339,18 @@ const EditorPage = () => {
 
       {/* Main Editor & History Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Editor Space */}
         <div className="flex-1 overflow-y-auto p-0 sm:p-4 md:p-8 flex justify-center bg-[#F8F9FA]">
           <div className="w-full sm:max-w-[816px] bg-white shadow-none sm:shadow-md min-h-full sm:min-h-[1056px] p-4 sm:p-8 md:p-[96px] relative">
             <ReactQuill
               theme="snow"
-              ref={(el) => {
-                if (el) setQuill(el.getEditor());
-              }}
+              ref={quillRef}
+              onChange={handleTextChange}
               className="editor-container"
             />
           </div>
         </div>
 
-        {/* History Sidebar Overlay/Side */}
+        {/* History Sidebar */}
         {showHistory && (
           <div className="w-72 bg-white border-l shadow-xl flex flex-col z-30 animate-in slide-in-from-right duration-300">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50">
@@ -347,7 +364,6 @@ const EditorPage = () => {
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-4">
               <button
                 onClick={saveManualVersion}
@@ -356,14 +372,12 @@ const EditorPage = () => {
                 <Save size={14} /> Create Snapshot
               </button>
             </div>
-
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {versions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                   <History size={32} className="mb-2 opacity-20" />
                   <p className="text-[11px] text-center px-4">
-                    No snapshots yet. Click "Create Snapshot" to save the
-                    current progress.
+                    No snapshots yet.
                   </p>
                 </div>
               ) : (
@@ -384,7 +398,6 @@ const EditorPage = () => {
                       <button
                         onClick={() => restoreVersion(v.content)}
                         className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded"
-                        title="Restore this version"
                       >
                         <RotateCcw size={14} />
                       </button>
@@ -410,9 +423,6 @@ const EditorPage = () => {
               </button>
             </div>
             <form onSubmit={handleShare}>
-              <p className="text-xs sm:text-sm text-gray-500 mb-4">
-                Enter collaborator's email.
-              </p>
               <input
                 type="email"
                 required
@@ -425,7 +435,7 @@ const EditorPage = () => {
                 <button
                   type="button"
                   onClick={() => setShowShareModal(false)}
-                  className="px-4 py-2 text-sm text-gray-600 font-medium"
+                  className="px-4 py-2 text-sm text-gray-600"
                 >
                   Cancel
                 </button>
