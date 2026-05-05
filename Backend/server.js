@@ -17,47 +17,71 @@ connectDB();
 const app = express();
 const httpServer = createServer(app);
 
-// 2. Define Allowed Origins
-
+// 2. Allowed Origins
 const allowedOrigins = [
   "https://collaboration-app-d4ze.vercel.app",
   "https://collaboration-app-1.onrender.com",
   "http://localhost:5173",
 ];
 
-// 3. Socket.io Setup
-const io = new Server(httpServer, {
-  cors: {
-    origin: allowedOrigins, // Use the same array for Socket.io
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
-
+// 3. CORS Middleware (Express)
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      // allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        console.error("❌ CORS blocked:", origin);
+        return callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   }),
 );
+
 app.use(express.json());
 
-// 5. Base Health Check
-app.get("/", (req, res) => res.send("Real-Time Doc Engine API is live."));
+// 4. Health Check Route
+app.get("/", (req, res) => {
+  res.send("Real-Time Doc Engine API is live.");
+});
 
-// 6. REST API Routes
+// 5. API Routes
 app.use("/api/docs", documentRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/ai", aiRoutes);
 
-// 7. Initialize Socket Logic
+// 6. Socket.IO Setup
+const io = new Server(httpServer, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+  transports: ["websocket", "polling"], // important for production
+});
+
+// 7. Socket Connection Debug (VERY useful)
+io.on("connection", (socket) => {
+  console.log("✅ Socket connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("❌ Socket disconnected:", socket.id);
+  });
+});
+
+// 8. Initialize your socket logic
 socketHandler(io);
 
-// 8. Error Middleware (MUST be after all routes)
+// 9. Error Middleware (must be last)
 app.use(errorHandler);
 
-// 9. Start Server
+// 10. Start Server
 const PORT = process.env.PORT || 8000;
+
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
